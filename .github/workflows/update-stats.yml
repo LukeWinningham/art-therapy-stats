@@ -1,0 +1,50 @@
+name: Update art therapy stats
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # daily, ~2:17 AM ET
+  workflow_dispatch: # "Run workflow" button for manual refreshes
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write # lets the keepalive step re-enable this schedule
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build stats JSON from monday.com
+        run: node scripts/build-stats.mjs
+        env:
+          MONDAY_TOKEN: ${{ secrets.MONDAY_TOKEN }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      # GitHub pauses scheduled workflows after 60 days without repo activity.
+      # Re-enabling the workflow each run keeps the daily schedule alive.
+      - name: Keep schedule alive
+        run: gh workflow enable update-stats.yml --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
